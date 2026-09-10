@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestione corse - Servizio di Accompagnamento Molfetta</title>
+<link rel="icon" href="data:,">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+// --- Connessione al database Supabase dedicato a questa app ---
+const supabaseClient = window.supabase.createClient(
+  "https://ctmqvddvepybqnwpbszl.supabase.co",
+  "sb_publishable_CWlLYCxxhLxct8z-cZ8Vbw__gj52r7s"
+);
+
+// Icone SVG minime, stesso nome/props delle icone lucide-react usate nel codice,
+// cosi' non serve modificare nient'altro nel resto del file.
+function iconBase(paths, viewBox = "0 0 24 24") {
+  return function Icon({ size = 20, color = "currentColor" }) {
+    return (
+      <svg width={size} height={size} viewBox={viewBox} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {paths}
+      </svg>
+    );
+  };
+}
+
+const Calendar = iconBase(<>
+  <rect x="3" y="4" width="18" height="18" rx="2" />
+  <line x1="16" y1="2" x2="16" y2="6" />
+  <line x1="8" y1="2" x2="8" y2="6" />
+  <line x1="3" y1="10" x2="21" y2="10" />
+</>);
+
+const TrendingUp = iconBase(<>
+  <polyline points="3 17 9 11 13 15 21 7" />
+  <polyline points="14 7 21 7 21 14" />
+</>);
+
+const SettingsIcon = iconBase(<>
+  <circle cx="12" cy="12" r="8" />
+  <circle cx="12" cy="12" r="3" />
+</>);
+
+const Plus = iconBase(<>
+  <line x1="12" y1="5" x2="12" y2="19" />
+  <line x1="5" y1="12" x2="19" y2="12" />
+</>);
+
+const X = iconBase(<>
+  <line x1="18" y1="6" x2="6" y2="18" />
+  <line x1="6" y1="6" x2="18" y2="18" />
+</>);
+
+const Trash2 = iconBase(<>
+  <polyline points="3 6 5 6 21 6" />
+  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  <line x1="10" y1="11" x2="10" y2="17" />
+  <line x1="14" y1="11" x2="14" y2="17" />
+</>);
+
+const ChevronLeft = iconBase(<polyline points="15 18 9 12 15 6" />);
+const ChevronRight = iconBase(<polyline points="9 18 15 12 9 6" />);
+
+const RotateCcw = iconBase(<>
+  <path d="M3 12a9 9 0 1 0 2.6-6.3" />
+  <polyline points="3 4 3 10 9 10" />
+</>);
+
+const Pencil = iconBase(<>
+  <path d="M12 20h9" />
+  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+</>);
+
+const Users = iconBase(<>
+  <circle cx="9" cy="7" r="4" />
+  <path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2" />
+  <circle cx="17" cy="7" r="3" />
+  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+</>);
+
+const Phone = iconBase(<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />);
+
+const Star = iconBase(<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />);
+
+
+
+const NAVY = "#152238";
+const OCHRE = "#C68A3E";
+const CREAM = "#F6F1E7";
+const PAPER = "#FFFDF9";
+const INK = "#20293A";
+const GRAY = "#57607A";
+
+const DEFAULT_SETTINGS = {
+  tariffaOraria: 10,
+  costoKm: 0.3,
+  kmInclusi: 8,
+  comuni: [
+    { nome: "Giovinazzo", km: 14 },
+    { nome: "Bisceglie", km: 20 },
+    { nome: "Terlizzi", km: 20 },
+    { nome: "Ruvo di Puglia", km: 30 },
+    { nome: "Bitonto", km: 40 },
+    { nome: "Bari", km: 65 },
+  ],
+};
+
+const SERVICE_TYPES = [
+  { id: "breve", label: "Commissione breve", ore: 0.75, kind: "molfetta" },
+  { id: "attesa", label: "Visita con attesa", ore: 2, kind: "molfetta" },
+  { id: "lunga", label: "Visita lunga", ore: 3, kind: "molfetta" },
+  { id: "fuori", label: "Fuori Molfetta", ore: 2, kind: "fuori" },
+  { id: "aeroporto", label: "Aeroporto Bari Palese", ore: 1.5, kind: "manuale" },
+  { id: "porto", label: "Porto di Bari", ore: 1.5, kind: "manuale" },
+  { id: "altro", label: "Altro", ore: 1, kind: "manuale" },
+];
+
+const MESI = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+const GIORNI = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
+
+function todayISO() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function suggerisci(tipoId, comuneNome, settings) {
+  const tipo = SERVICE_TYPES.find((t) => t.id === tipoId);
+  if (!tipo) return { ore: 1, km: settings.kmInclusi, prezzo: 0 };
+  if (tipo.kind === "molfetta") {
+    const ore = tipo.ore;
+    const km = settings.kmInclusi;
+    const prezzo = Math.round(ore * settings.tariffaOraria + km * settings.costoKm);
+    return { ore, km, prezzo };
+  }
+  if (tipo.kind === "fuori") {
+    const comune = settings.comuni.find((c) => c.nome === comuneNome) || settings.comuni[0];
+    const ore = tipo.ore;
+    const km = comune ? comune.km : settings.kmInclusi;
+    const prezzo = Math.round(ore * settings.tariffaOraria + km * settings.costoKm);
+    return { ore, km, prezzo };
+  }
+  // manuale: nessun suggerimento automatico di prezzo, solo ore di default
+  return { ore: tipo.ore, km: 0, prezzo: 0 };
+}
+
+function Gestionale() {
+  const [tab, setTab] = useState("calendario");
+  const [loading, setLoading] = useState(true);
+  const [rides, setRides] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [recurringTemplates, setRecurringTemplates] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [selectedDate, setSelectedDate] = useState(todayISO());
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [saveError, setSaveError] = useState("");
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [savingRides, setSavingRides] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingClients, setSavingClients] = useState(false);
+  const [clientsBlocked, setClientsBlocked] = useState(false);
+  const [clientsBlockedReason, setClientsBlockedReason] = useState(null);
+  const [blockedReason, setBlockedReason] = useState(null); // 'ambiguo' | 'dati_confermati' | null
+  const [blocked, setBlocked] = useState(false);
+  const [loadErrorDetail, setLoadErrorDetail] = useState("");
+  const [checkingStatus, setChecking] = useState(false);
+
+  const emptyForm = {
+    data: todayISO(),
+    oraInizio: "09:00",
+    tipo: "breve",
+    comune: settings.comuni[0]?.nome || "",
+    clienteId: "",
+    cliente: "",
+    ore: 0.75,
+    km: settings.kmInclusi,
+    prezzo: 0,
+  };
+  const [form, setForm] = useState(emptyForm);
+
+  // Legge una chiave dalla tabella kv_store su Supabase, riprovando piu' volte.
+  async function leggiConRiprovi(key, tentativi = 3, attesa = 600) {
+    let ultimoErrore = null;
+    for (let i = 0; i < tentativi; i++) {
+      try {
+        const { data, error } = await supabaseClient
+          .from("kv_store")
+          .select("value")
+          .eq("key", key)
+          .maybeSingle();
+        if (error) throw error;
+        return { ok: true, value: data ? data.value : null };
+      } catch (e) {
+        ultimoErrore = e && e.message ? e.message : String(e);
+        if (i < tentativi - 1) await new Promise((r) => setTimeout(r, attesa));
+      }
+    }
+    return { ok: false, value: null, error: ultimoErrore };
+  }
+
+  async function scriviConRiprovi(key, valueObj, tentativi = 3, attesa = 600) {
+    let ultimoErrore = null;
+    for (let i = 0; i < tentativi; i++) {
+      try {
+        const { error } = await supabaseClient
+          .from("kv_store")
+          .upsert({ key, value: valueObj, updated_at: new Date().toISOString() }, { onConflict: "key" });
+        if (error) throw error;
+        return { ok: true };
+      } catch (e) {
+        ultimoErrore = e && e.message ? e.message : String(e);
+      }
+      if (i < tentativi - 1) await new Promise((r) => setTimeout(r, attesa));
+    }
+    return { ok: false, error: ultimoErrore };
+  }
+
+  async function caricaDati() {
+    setChecking(true);
+    setBlocked(false);
+    setBlockedReason(null);
+    setClientsBlocked(false);
+    setClientsBlockedReason(null);
+    setSaveError("");
+
+    const marker = await leggiConRiprovi("rides-initialized-v1");
+    const r = await leggiConRiprovi("rides-v1");
+
+    if (r.ok) {
+      setRides(r.value ? r.value : []);
+    } else if (marker.ok) {
+      setBlocked(true);
+      setBlockedReason("dati_confermati");
+      setLoadErrorDetail(r.error || "");
+      setChecking(false);
+      return;
+    } else {
+      setBlocked(true);
+      setBlockedReason("ambiguo");
+      setLoadErrorDetail(r.error || "");
+      setChecking(false);
+      return;
+    }
+
+    // Clienti: stessa cautela — contengono nomi e numeri di telefono, non li azzero mai per errore.
+    const clientMarker = await leggiConRiprovi("clients-initialized-v1");
+    const c = await leggiConRiprovi("clients-v1");
+    if (c.ok) {
+      setClients(c.value ? c.value : []);
+    } else if (clientMarker.ok) {
+      setClientsBlocked(true);
+      setClientsBlockedReason("dati_confermati");
+      setLoadErrorDetail(c.error || "");
+      setChecking(false);
+      return;
+    } else {
+      setClientsBlocked(true);
+      setClientsBlockedReason("ambiguo");
+      setLoadErrorDetail(c.error || "");
+      setChecking(false);
+      return;
+    }
+
+    // Modelli ricorrenti: dati di comodo, non finanziari — se il caricamento fallisce
+    // parto da una lista vuota senza bloccare, il danno peggiore è doverli ricreare.
+    const rec = await leggiConRiprovi("recurring-v1");
+    if (rec.ok) setRecurringTemplates(rec.value ? rec.value : []);
+
+    const s = await leggiConRiprovi("settings-v1");
+    if (s.ok && s.value) setSettings(s.value);
+
+    setChecking(false);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    caricaDati();
+  }, []);
+
+  function iniziaDaZeroSenzaVerifica() {
+    setBlocked(false);
+    setClientsBlocked(false);
+    setRides([]);
+    setClients([]);
+    setLoading(false);
+  }
+
+  async function persistRides(next) {
+    if (blocked) return false;
+    setRides(next);
+    setSavingRides(true);
+    const res = await scriviConRiprovi("rides-v1", next);
+    if (res.ok) await scriviConRiprovi("rides-initialized-v1", "1", 1);
+    setSavingRides(false);
+    if (!res.ok) {
+      setSaveError(
+        `Non sono riuscito a salvare le corse. La modifica resta visibile qui, ma non è ancora al sicuro. Dettaglio tecnico: ${res.error || "sconosciuto"}`
+      );
+    } else {
+      setSaveError("");
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2500);
+    }
+    return res.ok;
+  }
+
+  async function riprovaSalvaRides() {
+    setSaveError("");
+    await persistRides(rides);
+  }
+
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResult, setTestResult] = useState("");
+
+  async function eseguiTestDiagnostico() {
+    setTestRunning(true);
+    setTestResult("");
+    try {
+      const scrittura = await supabaseClient.from("kv_store").upsert({ key: "test-diagnostico", value: "ciao", updated_at: new Date().toISOString() }, { onConflict: "key" });
+      if (scrittura.error) throw scrittura.error;
+      const lettura = await supabaseClient.from("kv_store").select("value").eq("key", "test-diagnostico").maybeSingle();
+      if (lettura.error) throw lettura.error;
+      setTestResult(`Scrittura riuscita. Lettura: ${lettura.data ? JSON.stringify(lettura.data.value) : "nessun valore"}.`);
+    } catch (e) {
+      setTestResult(`Fallito. Errore: ${e && e.message ? e.message : String(e)}`);
+    }
+    setTestRunning(false);
+  }
+
+  async function persistClients(next) {
+    if (clientsBlocked) return false;
+    setClients(next);
+    setSavingClients(true);
+    const res = await scriviConRiprovi("clients-v1", next);
+    if (res.ok) await scriviConRiprovi("clients-initialized-v1", "1", 1);
+    setSavingClients(false);
+    return res.ok;
+  }
+
+  async function persistRecurring(next) {
+    setRecurringTemplates(next);
+    const res = await scriviConRiprovi("recurring-v1", next);
+    return res.ok;
+  }
+
+  async function persistSettings(next) {
+    setSettings(next);
+    setSavingSettings(true);
+    const res = await scriviConRiprovi("settings-v1", next);
+    setSavingSettings(false);
+    return res.ok;
+  }
+
+  // --- calendario: griglia del mese ---
+  const grid = useMemo(() => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = (firstDay.getDay() + 6) % 7; // lunedì = 0
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push(iso);
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [currentMonth]);
+
+  const ridesByDate = useMemo(() => {
+    const map = {};
+    rides.forEach((r) => {
+      if (!map[r.data]) map[r.data] = [];
+      map[r.data].push(r);
+    });
+    return map;
+  }, [rides]);
+
+  const ridesOfSelectedDay = ridesByDate[selectedDate] || [];
+
+  // --- riepilogo economico del mese corrente ---
+  const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`;
+  const ridesThisMonth = useMemo(
+    () => rides.filter((r) => r.data.startsWith(monthKey)),
+    [rides, monthKey]
+  );
+  const totals = useMemo(() => {
+    let incassi = 0, km = 0, corse = 0;
+    ridesThisMonth.forEach((r) => {
+      incassi += Number(r.prezzo) || 0;
+      km += Number(r.km) || 0;
+      corse += 1;
+    });
+    const costi = round1(km * settings.costoKm * 10) / 10; // arrotondo a 1 decimale coerente
+    const costiEuro = Math.round(km * settings.costoKm * 100) / 100;
+    return { incassi, km, corse, costi: costiEuro, margine: Math.round((incassi - costiEuro) * 100) / 100 };
+  }, [ridesThisMonth, settings.costoKm]);
+
+  const breakdownPerTipo = useMemo(() => {
+    const map = {};
+    ridesThisMonth.forEach((r) => {
+      const label = SERVICE_TYPES.find((t) => t.id === r.tipo)?.label || r.tipo;
+      if (!map[label]) map[label] = { corse: 0, incassi: 0 };
+      map[label].corse += 1;
+      map[label].incassi += Number(r.prezzo) || 0;
+    });
+    return Object.entries(map).sort((a, b) => b[1].incassi - a[1].incassi);
+  }, [ridesThisMonth]);
+
+  // --- gestione form ---
+  function openNewForm(dateISO) {
+    const sug = suggerisci("breve", settings.comuni[0]?.nome, settings);
+    setForm({
+      ...emptyForm,
+      data: dateISO || selectedDate,
+      comune: settings.comuni[0]?.nome || "",
+      ore: sug.ore,
+      km: sug.km,
+      prezzo: sug.prezzo,
+    });
+    setEditingId(null);
+    setShowForm(true);
+  }
+
+  function openEditForm(ride) {
+    setForm({ clienteId: "", cliente: "", ...ride }); // valori di default per corse salvate prima che esistessero clienti collegati
+    setEditingId(ride.id);
+    setShowForm(true);
+  }
+
+  function handleTipoChange(tipoId) {
+    const sug = suggerisci(tipoId, form.comune, settings);
+    setForm((f) => ({ ...f, tipo: tipoId, ore: sug.ore, km: sug.km, prezzo: sug.prezzo }));
+  }
+
+  function handleComuneChange(nome) {
+    const sug = suggerisci(form.tipo, nome, settings);
+    setForm((f) => ({ ...f, comune: nome, ore: sug.ore, km: sug.km, prezzo: sug.prezzo }));
+  }
+
+  function applicaModello(templateId) {
+    const m = recurringTemplates.find((t) => t.id === templateId);
+    if (!m) return;
+    const sug = suggerisci(m.tipo, m.comune, settings);
+    setForm((f) => ({
+      ...f,
+      tipo: m.tipo,
+      comune: m.comune || f.comune,
+      clienteId: m.clienteId || "",
+      oraInizio: m.oraInizio || f.oraInizio,
+      ore: sug.ore,
+      km: sug.km,
+      prezzo: sug.prezzo,
+    }));
+  }
+
+  function ricalcolaPrezzo() {
+    const prezzo = Math.round(Number(form.ore) * settings.tariffaOraria + Number(form.km) * settings.costoKm);
+    setForm((f) => ({ ...f, prezzo }));
+  }
+
+  async function salvaCorsa() {
+    if (!form.data) return;
+    const ride = { ...form, id: editingId || `r${Date.now()}` };
+    let next;
+    if (editingId) {
+      next = rides.map((r) => (r.id === editingId ? ride : r));
+    } else {
+      next = [...rides, ride];
+    }
+    await persistRides(next);
+    setShowForm(false);
+    setSelectedDate(ride.data);
+  }
+
+  async function eliminaCorsa(id) {
+    const next = rides.filter((r) => r.id !== id);
+    await persistRides(next);
+  }
+
+  function meseIndietro() {
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+  }
+  function meseAvanti() {
+    setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+  }
+
+  const tipoCorrente = SERVICE_TYPES.find((t) => t.id === form.tipo);
+
+  if (loading && (blocked || clientsBlocked)) {
+    const reason = blocked ? blockedReason : clientsBlockedReason;
+    const risorsa = blocked ? "le corse" : "i clienti";
+    return (
+      <div style={{ background: CREAM, minHeight: "100vh" }} className="flex items-center justify-center p-6">
+        <div className="max-w-sm w-full p-5 rounded-xl" style={{ background: PAPER, border: `1px solid #E4DCC9` }}>
+          {reason === "dati_confermati" ? (
+            <>
+              <h2 style={{ color: NAVY }} className="text-lg font-bold mb-2">Non riesco a caricare {risorsa} già salvat{blocked ? "e" : "i"}</h2>
+              <p style={{ color: INK }} className="text-sm mb-4">
+                Questo account ha già dei dati registrati, ma in questo momento non riesco a leggerli. Per sicurezza non continuo: se partissi da zero rischierei di cancellare tutto al primo salvataggio.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 style={{ color: NAVY }} className="text-lg font-bold mb-2">Non riesco a verificare se ci sono dati salvati</h2>
+              <p style={{ color: INK }} className="text-sm mb-4">
+                Potrebbe essere la prima volta che apri l'app, oppure un problema di connessione temporaneo con dati già salvati in precedenza. Riprova prima di procedere — se sei sicuro che è la prima volta, puoi anche iniziare da zero.
+              </p>
+            </>
+          )}
+          {loadErrorDetail && (
+            <p className="text-xs mb-4 p-2 rounded" style={{ background: CREAM, color: GRAY, fontFamily: "monospace" }}>
+              Dettaglio tecnico: {loadErrorDetail}
+            </p>
+          )}
+          <button
+            onClick={caricaDati}
+            disabled={checkingStatus}
+            className="w-full py-3 rounded-lg font-bold text-base mb-2"
+            style={{ background: OCHRE, color: NAVY }}
+          >
+            {checkingStatus ? "Verifico…" : "Riprova a caricare"}
+          </button>
+          {reason === "ambiguo" && (
+            <button
+              onClick={iniziaDaZeroSenzaVerifica}
+              className="w-full py-3 rounded-lg font-semibold text-sm"
+              style={{ background: "transparent", color: GRAY, border: `1px solid #E4DCC9` }}
+            >
+              È la prima volta, inizia da zero
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div style={{ background: CREAM, minHeight: "100vh" }} className="flex items-center justify-center p-8">
+        <p style={{ color: GRAY }} className="text-lg">Caricamento…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: CREAM, minHeight: "100vh", fontFamily: "Georgia, 'Source Sans 3', sans-serif" }}>
+      {/* Header */}
+      <div style={{ background: NAVY }} className="px-4 pt-5 pb-3">
+        <h1 style={{ color: "#fff" }} className="text-xl font-bold">Gestione corse</h1>
+        <p style={{ color: OCHRE }} className="text-sm mt-0.5">Servizio di Accompagnamento — Molfetta</p>
+      </div>
+
+      {/* Tab bar grande, sempre visibile */}
+      <div style={{ background: NAVY }} className="flex px-2 pb-2 gap-1.5">
+        {[
+          { id: "calendario", label: "Calendario", icon: Calendar },
+          { id: "clienti", label: "Clienti", icon: Users },
+          { id: "riepilogo", label: "Riepilogo", icon: TrendingUp },
+          { id: "impostazioni", label: "Impostaz.", icon: SettingsIcon },
+        ].map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="flex-1 flex flex-col items-center gap-1 py-2 rounded-lg"
+              style={{
+                background: active ? OCHRE : "rgba(255,255,255,0.08)",
+                color: active ? NAVY : "#fff",
+              }}
+            >
+              <Icon size={18} />
+              <span className="text-[11px] font-semibold">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {saveError && (
+        <div className="mx-4 mt-3 p-3 rounded-lg text-sm" style={{ background: "#FBE7E7", color: "#7A2E2E" }}>
+          <p className="mb-2">{saveError}</p>
+          <button
+            onClick={riprovaSalvaRides}
+            disabled={savingRides}
+            className="px-3 py-2 rounded-lg text-sm font-semibold mr-2"
+            style={{ background: "#7A2E2E", color: "#fff" }}
+          >
+            {savingRides ? "Salvataggio…" : "Riprova a salvare"}
+          </button>
+          <button
+            onClick={eseguiTestDiagnostico}
+            disabled={testRunning}
+            className="px-3 py-2 rounded-lg text-sm font-semibold"
+            style={{ background: "transparent", color: "#7A2E2E", border: "1px solid #7A2E2E" }}
+          >
+            {testRunning ? "Test…" : "Test minimo di salvataggio"}
+          </button>
+          {testResult && (
+            <p className="text-xs mt-2" style={{ fontFamily: "monospace" }}>{testResult}</p>
+          )}
+        </div>
+      )}
+
+      {savingRides && !saveError && (
+        <div className="mx-4 mt-3 p-2 rounded-lg text-xs text-center" style={{ background: "#EFE6D4", color: NAVY }}>
+          Salvataggio in corso…
+        </div>
+      )}
+
+      {savedFlash && !saveError && !savingRides && (
+        <div className="mx-4 mt-3 p-2 rounded-lg text-xs text-center font-semibold" style={{ background: "#DCEEDD", color: "#1F5C2E" }}>
+          Salvato ✓
+        </div>
+      )}
+
+      <div className="p-4 max-w-2xl mx-auto">
+        {/* ---------------- CALENDARIO ---------------- */}
+        {tab === "calendario" && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={meseIndietro} className="p-2 rounded-full" style={{ background: PAPER }}>
+                <ChevronLeft size={22} color={NAVY} />
+              </button>
+              <h2 style={{ color: NAVY }} className="text-lg font-bold">
+                {MESI[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              </h2>
+              <button onClick={meseAvanti} className="p-2 rounded-full" style={{ background: PAPER }}>
+                <ChevronRight size={22} color={NAVY} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {GIORNI.map((g) => (
+                <div key={g} style={{ color: GRAY }} className="text-center text-xs font-semibold py-1">
+                  {g}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1">
+              {grid.map((iso, i) => {
+                if (!iso) return <div key={i} />;
+                const dayNum = Number(iso.slice(-2));
+                const hasRides = !!ridesByDate[iso];
+                const isSelected = iso === selectedDate;
+                const isToday = iso === todayISO();
+                return (
+                  <button
+                    key={iso}
+                    onClick={() => setSelectedDate(iso)}
+                    className="aspect-square rounded-lg flex flex-col items-center justify-center relative"
+                    style={{
+                      background: hasRides ? NAVY : PAPER,
+                      border: isSelected ? `2px solid ${OCHRE}` : isToday ? `2px solid ${NAVY}` : "1px solid #E4DCC9",
+                    }}
+                  >
+                    <span
+                      className="text-sm font-semibold"
+                      style={{ color: hasRides ? "#fff" : INK }}
+                    >
+                      {dayNum}
+                    </span>
+                    {hasRides && (
+                      <span
+                        className="text-[10px] mt-0.5 px-1 rounded-full font-bold"
+                        style={{ background: OCHRE, color: NAVY }}
+                      >
+                        {ridesByDate[iso].length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-4 mt-3 text-xs" style={{ color: GRAY }}>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ background: PAPER, border: "1px solid #E4DCC9" }} /> Libero
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ background: NAVY }} /> Occupato
+              </span>
+            </div>
+
+            {/* Giorno selezionato */}
+            <div className="mt-6 p-4 rounded-xl" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 style={{ color: NAVY }} className="font-bold">
+                  {new Date(selectedDate + "T00:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+                </h3>
+                <button
+                  onClick={() => openNewForm(selectedDate)}
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold"
+                  style={{ background: OCHRE, color: NAVY }}
+                >
+                  <Plus size={16} /> Aggiungi corsa
+                </button>
+              </div>
+
+              {ridesOfSelectedDay.length === 0 && (
+                <p style={{ color: GRAY }} className="text-sm">Nessuna corsa registrata per questo giorno.</p>
+              )}
+              {ridesOfSelectedDay.length > 0 && (
+                <p style={{ color: GRAY }} className="text-xs mb-2">Tocca la matita per modificare una corsa.</p>
+              )}
+
+              <div className="space-y-2">
+                {ridesOfSelectedDay
+                  .slice()
+                  .sort((a, b) => a.oraInizio.localeCompare(b.oraInizio))
+                  .map((r) => {
+                    const tipoLabel = SERVICE_TYPES.find((t) => t.id === r.tipo)?.label || r.tipo;
+                    const cliente = clients.find((c) => c.id === r.clienteId);
+                    const nomeMostrato = cliente ? `${cliente.nome} ${cliente.cognome}` : r.cliente;
+                    return (
+                      <div
+                        key={r.id}
+                        className="p-3 rounded-lg flex items-center gap-3"
+                        style={{ background: CREAM }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p style={{ color: NAVY }} className="font-semibold text-sm">
+                            {r.oraInizio} — {tipoLabel}
+                            {r.tipo === "fuori" && r.comune ? ` (${r.comune})` : ""}
+                          </p>
+                          {nomeMostrato && <p style={{ color: GRAY }} className="text-xs">{nomeMostrato}</p>}
+                        </div>
+                        <div className="text-right">
+                          <p style={{ color: NAVY }} className="font-bold text-sm">{Number(r.prezzo).toFixed(0)}€</p>
+                          <p style={{ color: GRAY }} className="text-xs">{r.km} km</p>
+                        </div>
+                        <button
+                          onClick={() => openEditForm(r)}
+                          aria-label="Modifica corsa"
+                          className="p-2 rounded-lg flex-shrink-0"
+                          style={{ background: PAPER, border: `1px solid #E4DCC9` }}
+                        >
+                          <Pencil size={18} color={NAVY} />
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ---------------- CLIENTI ---------------- */}
+        {tab === "clienti" && (
+          <ClientiPanel
+            clients={clients}
+            rides={rides}
+            onSave={persistClients}
+            blocked={clientsBlocked}
+            saving={savingClients}
+          />
+        )}
+
+        {/* ---------------- RIEPILOGO ---------------- */}
+        {tab === "riepilogo" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={meseIndietro} className="p-2 rounded-full" style={{ background: PAPER }}>
+                <ChevronLeft size={22} color={NAVY} />
+              </button>
+              <h2 style={{ color: NAVY }} className="text-lg font-bold">
+                {MESI[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              </h2>
+              <button onClick={meseAvanti} className="p-2 rounded-full" style={{ background: PAPER }}>
+                <ChevronRight size={22} color={NAVY} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-4 rounded-xl" style={{ background: NAVY }}>
+                <p style={{ color: "#B9C2D4" }} className="text-xs">Incassi</p>
+                <p style={{ color: "#fff" }} className="text-2xl font-bold">{totals.incassi.toFixed(0)}€</p>
+              </div>
+              <div className="p-4 rounded-xl" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+                <p style={{ color: GRAY }} className="text-xs">Costi auto (km)</p>
+                <p style={{ color: NAVY }} className="text-2xl font-bold">{totals.costi.toFixed(2)}€</p>
+              </div>
+              <div className="p-4 rounded-xl" style={{ background: OCHRE }}>
+                <p style={{ color: NAVY }} className="text-xs font-semibold">Margine</p>
+                <p style={{ color: NAVY }} className="text-2xl font-bold">{totals.margine.toFixed(2)}€</p>
+              </div>
+              <div className="p-4 rounded-xl" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+                <p style={{ color: GRAY }} className="text-xs">Km percorsi</p>
+                <p style={{ color: NAVY }} className="text-2xl font-bold">{totals.km}</p>
+              </div>
+            </div>
+
+            <p style={{ color: GRAY }} className="text-sm mb-4">
+              {totals.corse} {totals.corse === 1 ? "corsa registrata" : "corse registrate"} questo mese.
+            </p>
+
+            {breakdownPerTipo.length > 0 && (
+              <div className="p-4 rounded-xl" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+                <h3 style={{ color: NAVY }} className="font-bold mb-3">Per tipo di servizio</h3>
+                <div className="space-y-2">
+                  {breakdownPerTipo.map(([label, d]) => (
+                    <div key={label} className="flex items-center justify-between text-sm">
+                      <span style={{ color: INK }}>{label} <span style={{ color: GRAY }}>× {d.corse}</span></span>
+                      <span style={{ color: NAVY }} className="font-semibold">{d.incassi.toFixed(0)}€</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs mt-4" style={{ color: GRAY }}>
+              I costi auto sono calcolati come km percorsi × costo al km impostato — non includono altre spese (es. assicurazione, manutenzione straordinaria) se non le hai incluse tu nel costo al km.
+            </p>
+          </div>
+        )}
+
+        {/* ---------------- IMPOSTAZIONI ---------------- */}
+        {tab === "impostazioni" && (
+          <SettingsPanel
+            settings={settings}
+            onSave={persistSettings}
+            rides={rides}
+            clients={clients}
+            recurringTemplates={recurringTemplates}
+            onSaveRecurring={persistRecurring}
+          />
+        )}
+      </div>
+
+      {/* ---------------- FORM AGGIUNGI/MODIFICA CORSA ---------------- */}
+      {showForm && (
+        <div className="fixed inset-0 flex items-end sm:items-center justify-center z-50" style={{ background: "rgba(21,34,56,0.5)" }}>
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto" style={{ background: PAPER }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 style={{ color: NAVY }} className="text-lg font-bold">
+                {editingId ? "Modifica corsa" : "Nuova corsa"}
+              </h3>
+              <button onClick={() => setShowForm(false)}>
+                <X size={22} color={GRAY} />
+              </button>
+            </div>
+
+            {!editingId && recurringTemplates.length > 0 && (
+              <>
+                <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Usa un modello ricorrente</label>
+                <select
+                  defaultValue=""
+                  onChange={(e) => e.target.value && applicaModello(e.target.value)}
+                  className="w-full p-3 rounded-lg mb-3 text-base"
+                  style={{ border: `1px solid ${OCHRE}`, background: "#FBF0DE" }}
+                >
+                  <option value="">— nessun modello, inserisci manualmente —</option>
+                  {recurringTemplates.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Data</label>
+            <input
+              type="date"
+              value={form.data}
+              onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Ora di partenza</label>
+            <input
+              type="time"
+              value={form.oraInizio}
+              onChange={(e) => setForm((f) => ({ ...f, oraInizio: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Tipo di servizio</label>
+            <select
+              value={form.tipo}
+              onChange={(e) => handleTipoChange(e.target.value)}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            >
+              {SERVICE_TYPES.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+
+            {tipoCorrente?.kind === "fuori" && (
+              <>
+                <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Comune</label>
+                <select
+                  value={form.comune}
+                  onChange={(e) => handleComuneChange(e.target.value)}
+                  className="w-full p-3 rounded-lg mb-3 text-base"
+                  style={{ border: "1px solid #E4DCC9", background: CREAM }}
+                >
+                  {settings.comuni.map((c) => (
+                    <option key={c.nome} value={c.nome}>{c.nome}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Cliente (facoltativo)</label>
+            <select
+              value={form.clienteId}
+              onChange={(e) => setForm((f) => ({ ...f, clienteId: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            >
+              <option value="">— nessuno, uso solo la nota —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>{c.nome} {c.cognome}</option>
+              ))}
+            </select>
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Nota (facoltativa)</label>
+            <input
+              type="text"
+              value={form.cliente}
+              onChange={(e) => setForm((f) => ({ ...f, cliente: e.target.value }))}
+              placeholder="Es. portato anche il marito"
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Ore</label>
+                <input
+                  type="number" step="0.25" min="0"
+                  value={form.ore}
+                  onChange={(e) => setForm((f) => ({ ...f, ore: e.target.value }))}
+                  className="w-full p-3 rounded-lg text-base"
+                  style={{ border: "1px solid #E4DCC9", background: CREAM }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Km</label>
+                <input
+                  type="number" step="1" min="0"
+                  value={form.km}
+                  onChange={(e) => setForm((f) => ({ ...f, km: e.target.value }))}
+                  className="w-full p-3 rounded-lg text-base"
+                  style={{ border: "1px solid #E4DCC9", background: CREAM }}
+                />
+              </div>
+            </div>
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Prezzo (€)</label>
+            <div className="flex gap-2 mb-4">
+              <input
+                type="number" step="1" min="0"
+                value={form.prezzo}
+                onChange={(e) => setForm((f) => ({ ...f, prezzo: e.target.value }))}
+                className="flex-1 p-3 rounded-lg text-base font-bold"
+                style={{ border: "1px solid #E4DCC9", background: CREAM, color: NAVY }}
+              />
+              <button
+                onClick={ricalcolaPrezzo}
+                className="px-3 rounded-lg flex items-center gap-1 text-sm font-semibold"
+                style={{ background: NAVY, color: "#fff" }}
+                title="Ricalcola dal tariffario"
+              >
+                <RotateCcw size={16} /> Ricalcola
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={salvaCorsa}
+                className="flex-1 py-3 rounded-lg font-bold text-base"
+                style={{ background: OCHRE, color: NAVY }}
+              >
+                Salva corsa
+              </button>
+              {editingId && (
+                <button
+                  onClick={() => { eliminaCorsa(editingId); setShowForm(false); }}
+                  className="p-3 rounded-lg"
+                  style={{ background: "#FBE7E7" }}
+                >
+                  <Trash2 size={20} color="#7A2E2E" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientiPanel({ clients, rides, onSave, blocked, saving }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ nome: "", cognome: "", telefono: "" });
+  const [expandedId, setExpandedId] = useState(null);
+
+  const totali = useMemo(() => {
+    const map = {};
+    rides.forEach((r) => {
+      if (!r.clienteId) return;
+      if (!map[r.clienteId]) map[r.clienteId] = { incassi: 0, corse: 0 };
+      map[r.clienteId].incassi += Number(r.prezzo) || 0;
+      map[r.clienteId].corse += 1;
+    });
+    return map;
+  }, [rides]);
+
+  const clientiOrdinati = useMemo(
+    () => clients.slice().sort((a, b) => (totali[b.id]?.incassi || 0) - (totali[a.id]?.incassi || 0)),
+    [clients, totali]
+  );
+
+  function apriNuovo() {
+    setForm({ nome: "", cognome: "", telefono: "" });
+    setEditingId(null);
+    setShowForm(true);
+  }
+
+  function apriModifica(c) {
+    setForm({ nome: c.nome, cognome: c.cognome, telefono: c.telefono });
+    setEditingId(c.id);
+    setShowForm(true);
+  }
+
+  async function salva() {
+    if (!form.nome.trim()) return;
+    const cliente = { ...form, id: editingId || `c${Date.now()}` };
+    let next;
+    if (editingId) {
+      next = clients.map((c) => (c.id === editingId ? cliente : c));
+    } else {
+      next = [...clients, cliente];
+    }
+    await onSave(next);
+    setShowForm(false);
+  }
+
+  async function elimina(id) {
+    // Non tocco le corse passate: restano nello storico, solo non più collegate a un cliente registrato.
+    const next = clients.filter((c) => c.id !== id);
+    await onSave(next);
+  }
+
+  if (blocked) {
+    return (
+      <p style={{ color: GRAY }} className="text-sm">
+        L'elenco clienti non si è caricato correttamente. Vai nella scheda Calendario e usa "Riprova a caricare" prima di continuare qui.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 style={{ color: NAVY }} className="text-lg font-bold">I tuoi clienti</h2>
+        <button
+          onClick={apriNuovo}
+          className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold"
+          style={{ background: OCHRE, color: NAVY }}
+        >
+          <Plus size={16} /> Nuovo cliente
+        </button>
+      </div>
+
+      {clientiOrdinati.length === 0 && (
+        <p style={{ color: GRAY }} className="text-sm">Nessun cliente registrato ancora.</p>
+      )}
+
+      <div className="space-y-2">
+        {clientiOrdinati.map((c) => {
+          const t = totali[c.id] || { incassi: 0, corse: 0 };
+          const isOpen = expandedId === c.id;
+          const storicoCliente = rides
+            .filter((r) => r.clienteId === c.id)
+            .sort((a, b) => b.data.localeCompare(a.data));
+          return (
+            <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+              <button
+                onClick={() => setExpandedId(isOpen ? null : c.id)}
+                className="w-full p-3 flex items-center justify-between text-left"
+              >
+                <div>
+                  <p style={{ color: NAVY }} className="font-bold text-sm">{c.nome} {c.cognome}</p>
+                  {c.telefono && (
+                    <p style={{ color: GRAY }} className="text-xs flex items-center gap-1 mt-0.5">
+                      <Phone size={12} /> {c.telefono}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p style={{ color: NAVY }} className="font-bold text-base">{t.incassi.toFixed(0)}€</p>
+                  <p style={{ color: GRAY }} className="text-xs">{t.corse} {t.corse === 1 ? "corsa" : "corse"}</p>
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="px-3 pb-3">
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      onClick={() => apriModifica(c)}
+                      className="flex-1 py-2 rounded-lg text-sm font-semibold flex items-center justify-center gap-1"
+                      style={{ background: CREAM, color: NAVY }}
+                    >
+                      <Pencil size={14} /> Modifica
+                    </button>
+                    <button
+                      onClick={() => elimina(c.id)}
+                      className="py-2 px-3 rounded-lg"
+                      style={{ background: "#FBE7E7" }}
+                    >
+                      <Trash2 size={16} color="#7A2E2E" />
+                    </button>
+                  </div>
+                  {storicoCliente.length === 0 ? (
+                    <p style={{ color: GRAY }} className="text-xs">Nessuna corsa registrata per questo cliente.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {storicoCliente.map((r) => {
+                        const tipoLabel = SERVICE_TYPES.find((t2) => t2.id === r.tipo)?.label || r.tipo;
+                        return (
+                          <div key={r.id} className="flex justify-between text-xs" style={{ color: INK }}>
+                            <span>{r.data} — {tipoLabel}</span>
+                            <span className="font-semibold">{Number(r.prezzo).toFixed(0)}€</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 flex items-end sm:items-center justify-center z-50" style={{ background: "rgba(21,34,56,0.5)" }}>
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5" style={{ background: PAPER }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 style={{ color: NAVY }} className="text-lg font-bold">{editingId ? "Modifica cliente" : "Nuovo cliente"}</h3>
+              <button onClick={() => setShowForm(false)}>
+                <X size={22} color={GRAY} />
+              </button>
+            </div>
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Nome</label>
+            <input
+              type="text"
+              value={form.nome}
+              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Cognome</label>
+            <input
+              type="text"
+              value={form.cognome}
+              onChange={(e) => setForm((f) => ({ ...f, cognome: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Telefono</label>
+            <input
+              type="tel"
+              value={form.telefono}
+              onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))}
+              placeholder="Es. 333 1234567"
+              className="w-full p-3 rounded-lg mb-4 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <button
+              onClick={salva}
+              disabled={saving}
+              className="w-full py-3 rounded-lg font-bold text-base"
+              style={{ background: OCHRE, color: NAVY }}
+            >
+              {saving ? "Salvataggio…" : "Salva cliente"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsPanel({ settings, onSave, rides, clients, recurringTemplates, onSaveRecurring }) {
+  const [local, setLocal] = useState(settings);
+  const [status, setStatus] = useState("idle"); // idle | saving | saved | error
+
+  useEffect(() => setLocal(settings), [settings]);
+
+  function updateComune(i, field, value) {
+    const next = local.comuni.map((c, idx) => (idx === i ? { ...c, [field]: value } : c));
+    setLocal({ ...local, comuni: next });
+  }
+
+  async function salva() {
+    const cleaned = {
+      ...local,
+      tariffaOraria: Number(local.tariffaOraria),
+      costoKm: Number(local.costoKm),
+      kmInclusi: Number(local.kmInclusi),
+      comuni: local.comuni.map((c) => ({ nome: c.nome, km: Number(c.km) })),
+    };
+    setStatus("saving");
+    const ok = await onSave(cleaned);
+    if (ok) {
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2000);
+    } else {
+      setStatus("error");
+    }
+  }
+
+  function esportaCSV() {
+    const intestazione = "Data,Ora,Tipo servizio,Comune,Cliente,Nota,Ore,Km,Prezzo (€)\n";
+    const righe = (rides || [])
+      .slice()
+      .sort((a, b) => a.data.localeCompare(b.data))
+      .map((r) => {
+        const tipoLabel = SERVICE_TYPES.find((t) => t.id === r.tipo)?.label || r.tipo;
+        const cliente = (clients || []).find((c) => c.id === r.clienteId);
+        const nomeCliente = cliente ? `${cliente.nome} ${cliente.cognome}` : "";
+        const campi = [r.data, r.oraInizio, tipoLabel, r.comune || "", nomeCliente, r.cliente || "", r.ore, r.km, r.prezzo];
+        return campi.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
+      })
+      .join("\n");
+    const csv = intestazione + righe;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `corse_backup_${todayISO()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function esportaClientiCSV() {
+    const intestazione = "Nome,Cognome,Telefono\n";
+    const righe = (clients || [])
+      .map((c) => [c.nome, c.cognome, c.telefono].map((v) => `"${String(v || "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const csv = intestazione + righe;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `clienti_backup_${todayISO()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // --- Modelli ricorrenti ---
+  const [showModello, setShowModello] = useState(false);
+  const [modelloEditId, setModelloEditId] = useState(null);
+  const [modelloForm, setModelloForm] = useState({ label: "", tipo: "breve", comune: settings.comuni[0]?.nome || "", clienteId: "", oraInizio: "09:00" });
+
+  function apriNuovoModello() {
+    setModelloForm({ label: "", tipo: "breve", comune: settings.comuni[0]?.nome || "", clienteId: "", oraInizio: "09:00" });
+    setModelloEditId(null);
+    setShowModello(true);
+  }
+
+  function apriModificaModello(m) {
+    setModelloForm({ label: m.label, tipo: m.tipo, comune: m.comune || "", clienteId: m.clienteId || "", oraInizio: m.oraInizio || "09:00" });
+    setModelloEditId(m.id);
+    setShowModello(true);
+  }
+
+  async function salvaModello() {
+    if (!modelloForm.label.trim()) return;
+    const modello = { ...modelloForm, id: modelloEditId || `m${Date.now()}` };
+    let next;
+    if (modelloEditId) {
+      next = recurringTemplates.map((m) => (m.id === modelloEditId ? modello : m));
+    } else {
+      next = [...recurringTemplates, modello];
+    }
+    await onSaveRecurring(next);
+    setShowModello(false);
+  }
+
+  async function eliminaModello(id) {
+    const next = recurringTemplates.filter((m) => m.id !== id);
+    await onSaveRecurring(next);
+  }
+
+  return (
+    <div>
+      <div className="p-4 rounded-xl mb-4" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+        <h3 style={{ color: NAVY }} className="font-bold mb-3">Parametri di calcolo</h3>
+
+        <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Tariffa oraria (€/ora)</label>
+        <input
+          type="number" step="1"
+          value={local.tariffaOraria}
+          onChange={(e) => setLocal({ ...local, tariffaOraria: e.target.value })}
+          className="w-full p-3 rounded-lg mb-3 text-base"
+          style={{ border: "1px solid #E4DCC9", background: CREAM }}
+        />
+
+        <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Costo al km (€/km)</label>
+        <input
+          type="number" step="0.05"
+          value={local.costoKm}
+          onChange={(e) => setLocal({ ...local, costoKm: e.target.value })}
+          className="w-full p-3 rounded-lg mb-3 text-base"
+          style={{ border: "1px solid #E4DCC9", background: CREAM }}
+        />
+
+        <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Km inclusi pacchetto Molfetta (a/r)</label>
+        <input
+          type="number" step="1"
+          value={local.kmInclusi}
+          onChange={(e) => setLocal({ ...local, kmInclusi: e.target.value })}
+          className="w-full p-3 rounded-lg text-base"
+          style={{ border: "1px solid #E4DCC9", background: CREAM }}
+        />
+      </div>
+
+      <div className="p-4 rounded-xl mb-4" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+        <h3 style={{ color: NAVY }} className="font-bold mb-3">Distanze fuori Molfetta (km a/r)</h3>
+        <div className="space-y-2">
+          {local.comuni.map((c, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span style={{ color: INK }} className="flex-1 text-sm">{c.nome}</span>
+              <input
+                type="number" step="1"
+                value={c.km}
+                onChange={(e) => updateComune(i, "km", e.target.value)}
+                className="w-20 p-2 rounded-lg text-base text-right"
+                style={{ border: "1px solid #E4DCC9", background: CREAM }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={salva}
+        disabled={status === "saving"}
+        className="w-full py-3 rounded-lg font-bold text-base"
+        style={{ background: status === "error" ? "#7A2E2E" : OCHRE, color: status === "error" ? "#fff" : NAVY }}
+      >
+        {status === "saving" && "Salvataggio…"}
+        {status === "saved" && "Salvato ✓"}
+        {status === "error" && "Non salvato — tocca per riprovare"}
+        {status === "idle" && "Salva impostazioni"}
+      </button>
+
+      <p className="text-xs mt-4 mb-4" style={{ color: GRAY }}>
+        Questi valori sono indipendenti dal file Excel "Tariffario_interno" — se cambi un numero qui, ricordati di aggiornarlo anche lì se vuoi che restino coerenti.
+      </p>
+
+      <div className="p-4 rounded-xl mb-4" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+        <div className="flex items-center justify-between mb-2">
+          <h3 style={{ color: NAVY }} className="font-bold">Corse ricorrenti</h3>
+          <button
+            onClick={apriNuovoModello}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold"
+            style={{ background: OCHRE, color: NAVY }}
+          >
+            <Plus size={14} /> Nuovo
+          </button>
+        </div>
+        <p style={{ color: GRAY }} className="text-sm mb-3">
+          Modelli pronti per corse abituali (es. la stessa visita ogni martedì). Li richiami dal modulo "Nuova corsa" per non riscrivere tutto ogni volta — ma la corsa resta registrata solo quando la confermi davvero, il giorno in cui avviene.
+        </p>
+        {recurringTemplates.length === 0 && (
+          <p style={{ color: GRAY }} className="text-xs">Nessun modello ancora creato.</p>
+        )}
+        <div className="space-y-2">
+          {recurringTemplates.map((m) => {
+            const tipoLabel = SERVICE_TYPES.find((t) => t.id === m.tipo)?.label || m.tipo;
+            const cliente = (clients || []).find((c) => c.id === m.clienteId);
+            return (
+              <div key={m.id} className="p-3 rounded-lg flex items-center justify-between" style={{ background: CREAM }}>
+                <div>
+                  <p style={{ color: NAVY }} className="font-semibold text-sm">{m.label}</p>
+                  <p style={{ color: GRAY }} className="text-xs">
+                    {m.oraInizio} — {tipoLabel}{m.tipo === "fuori" && m.comune ? ` (${m.comune})` : ""}
+                    {cliente ? ` — ${cliente.nome} ${cliente.cognome}` : ""}
+                  </p>
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => apriModificaModello(m)} className="p-2 rounded-lg" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+                    <Pencil size={16} color={NAVY} />
+                  </button>
+                  <button onClick={() => eliminaModello(m.id)} className="p-2 rounded-lg" style={{ background: "#FBE7E7" }}>
+                    <Trash2 size={16} color="#7A2E2E" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="p-4 rounded-xl mb-4" style={{ background: PAPER, border: "1px solid #E4DCC9" }}>
+        <h3 style={{ color: NAVY }} className="font-bold mb-2">Backup</h3>
+        <p style={{ color: GRAY }} className="text-sm mb-3">
+          Scarica i dati in un file sul telefono, indipendente da questa app. Fallo ogni tanto, soprattutto prima di fare tante modifiche.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={esportaCSV}
+            className="flex-1 py-3 rounded-lg font-bold text-sm"
+            style={{ background: NAVY, color: "#fff" }}
+          >
+            Corse (CSV)
+          </button>
+          <button
+            onClick={esportaClientiCSV}
+            className="flex-1 py-3 rounded-lg font-bold text-sm"
+            style={{ background: NAVY, color: "#fff" }}
+          >
+            Clienti (CSV)
+          </button>
+        </div>
+      </div>
+
+      {showModello && (
+        <div className="fixed inset-0 flex items-end sm:items-center justify-center z-50" style={{ background: "rgba(21,34,56,0.5)" }}>
+          <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto" style={{ background: PAPER }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 style={{ color: NAVY }} className="text-lg font-bold">{modelloEditId ? "Modifica modello" : "Nuovo modello"}</h3>
+              <button onClick={() => setShowModello(false)}>
+                <X size={22} color={GRAY} />
+              </button>
+            </div>
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Nome del modello</label>
+            <input
+              type="text"
+              value={modelloForm.label}
+              onChange={(e) => setModelloForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="Es. Sig.ra Rossi — martedì mattina"
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Ora abituale</label>
+            <input
+              type="time"
+              value={modelloForm.oraInizio}
+              onChange={(e) => setModelloForm((f) => ({ ...f, oraInizio: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            />
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Tipo di servizio</label>
+            <select
+              value={modelloForm.tipo}
+              onChange={(e) => setModelloForm((f) => ({ ...f, tipo: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-3 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            >
+              {SERVICE_TYPES.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+
+            {modelloForm.tipo === "fuori" && (
+              <>
+                <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Comune</label>
+                <select
+                  value={modelloForm.comune}
+                  onChange={(e) => setModelloForm((f) => ({ ...f, comune: e.target.value }))}
+                  className="w-full p-3 rounded-lg mb-3 text-base"
+                  style={{ border: "1px solid #E4DCC9", background: CREAM }}
+                >
+                  {settings.comuni.map((c) => (
+                    <option key={c.nome} value={c.nome}>{c.nome}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            <label className="block text-sm font-semibold mb-1" style={{ color: NAVY }}>Cliente (facoltativo)</label>
+            <select
+              value={modelloForm.clienteId}
+              onChange={(e) => setModelloForm((f) => ({ ...f, clienteId: e.target.value }))}
+              className="w-full p-3 rounded-lg mb-4 text-base"
+              style={{ border: "1px solid #E4DCC9", background: CREAM }}
+            >
+              <option value="">— nessuno —</option>
+              {(clients || []).map((c) => (
+                <option key={c.id} value={c.id}>{c.nome} {c.cognome}</option>
+              ))}
+            </select>
+
+            <button
+              onClick={salvaModello}
+              className="w-full py-3 rounded-lg font-bold text-base"
+              style={{ background: OCHRE, color: NAVY }}
+            >
+              Salva modello
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+const APP_PASSWORD = "Dernico1958@";
+
+function SchermataAccesso({ onSuccess }) {
+  const [valore, setValore] = React.useState("");
+  const [errore, setErrore] = React.useState(false);
+
+  function prova(e) {
+    e.preventDefault();
+    if (valore === APP_PASSWORD) {
+      try { localStorage.setItem("gestionale_sbloccato", "si"); } catch (e2) {}
+      onSuccess();
+    } else {
+      setErrore(true);
+    }
+  }
+
+  return (
+    <div style={{ background: "#F6F1E7", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "Georgia, sans-serif" }}>
+      <form onSubmit={prova} style={{ background: "#FFFDF9", border: "1px solid #E4DCC9", borderRadius: "16px", padding: "28px", maxWidth: "360px", width: "100%" }}>
+        <h1 style={{ color: "#152238", fontSize: "20px", fontWeight: "bold", marginBottom: "8px" }}>Gestione corse</h1>
+        <p style={{ color: "#57607A", fontSize: "14px", marginBottom: "18px" }}>Inserisci la password per accedere.</p>
+        <input
+          type="password"
+          value={valore}
+          onChange={(e) => { setValore(e.target.value); setErrore(false); }}
+          autoFocus
+          style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #E4DCC9", background: "#F6F1E7", fontSize: "16px", boxSizing: "border-box", marginBottom: "10px" }}
+        />
+        {errore && <p style={{ color: "#7A2E2E", fontSize: "13px", marginBottom: "10px" }}>Password non corretta.</p>}
+        <button type="submit" style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "none", background: "#C68A3E", color: "#152238", fontWeight: "bold", fontSize: "16px" }}>
+          Entra
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function App() {
+  const [sbloccato, setSbloccato] = React.useState(() => {
+    try { return localStorage.getItem("gestionale_sbloccato") === "si"; } catch (e) { return false; }
+  });
+  if (!sbloccato) return <SchermataAccesso onSuccess={() => setSbloccato(true)} />;
+  return <Gestionale />;
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
