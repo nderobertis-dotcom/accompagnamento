@@ -145,13 +145,16 @@
     const emptyForm = {
       data: todayISO(),
       oraInizio: "09:00",
+      oraRitorno: "",
       tipo: "breve",
       comune: ((_a = settings.comuni[0]) == null ? void 0 : _a.nome) || "",
+      comuneCustom: "",
       clienteId: "",
       cliente: "",
       ore: 0.75,
       km: settings.kmInclusi,
-      prezzo: 0
+      prezzo: 0,
+      stato: "effettuata"
     };
     const [form, setForm] = useState(emptyForm);
     async function leggiConRiprovi(key, tentativi = 3, attesa = 600) {
@@ -325,7 +328,11 @@
     const ridesOfSelectedDay = ridesByDate[selectedDate] || [];
     const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`;
     const ridesThisMonth = useMemo(
-      () => rides.filter((r) => r.data.startsWith(monthKey)),
+      () => rides.filter((r) => r.data.startsWith(monthKey) && (r.stato || "effettuata") === "effettuata"),
+      [rides, monthKey]
+    );
+    const prenotateThisMonth = useMemo(
+      () => rides.filter((r) => r.data.startsWith(monthKey) && r.stato === "prenotata"),
       [rides, monthKey]
     );
     const totals = useMemo(() => {
@@ -352,29 +359,40 @@
     }, [ridesThisMonth]);
     function openNewForm(dateISO) {
       var _a2, _b;
+      const data = dateISO || selectedDate;
       const sug = suggerisci("breve", (_a2 = settings.comuni[0]) == null ? void 0 : _a2.nome, settings);
       setForm(__spreadProps(__spreadValues({}, emptyForm), {
-        data: dateISO || selectedDate,
+        data,
         comune: ((_b = settings.comuni[0]) == null ? void 0 : _b.nome) || "",
         ore: sug.ore,
         km: sug.km,
-        prezzo: sug.prezzo
+        prezzo: sug.prezzo,
+        stato: data > todayISO() ? "prenotata" : "effettuata"
       }));
       setEditingId(null);
       setShowForm(true);
     }
     function openEditForm(ride) {
-      setForm(__spreadValues({ clienteId: "", cliente: "" }, ride));
+      setForm(__spreadValues({ clienteId: "", cliente: "", stato: "effettuata", oraRitorno: "", comuneCustom: "" }, ride));
       setEditingId(ride.id);
       setShowForm(true);
+    }
+    async function segnaEffettuata(ride) {
+      const next = rides.map((r) => r.id === ride.id ? __spreadProps(__spreadValues({}, r), { stato: "effettuata" }) : r);
+      await persistRides(next);
     }
     function handleTipoChange(tipoId) {
       const sug = suggerisci(tipoId, form.comune, settings);
       setForm((f) => __spreadProps(__spreadValues({}, f), { tipo: tipoId, ore: sug.ore, km: sug.km, prezzo: sug.prezzo }));
     }
     function handleComuneChange(nome) {
+      if (nome === "ALTRO") {
+        const prezzo = Math.round(Number(form.ore) * settings.tariffaOraria);
+        setForm((f) => __spreadProps(__spreadValues({}, f), { comune: "ALTRO", km: 0, prezzo }));
+        return;
+      }
       const sug = suggerisci(form.tipo, nome, settings);
-      setForm((f) => __spreadProps(__spreadValues({}, f), { comune: nome, ore: sug.ore, km: sug.km, prezzo: sug.prezzo }));
+      setForm((f) => __spreadProps(__spreadValues({}, f), { comune: nome, comuneCustom: "", ore: sug.ore, km: sug.km, prezzo: sug.prezzo }));
     }
     function applicaModello(templateId) {
       const m = recurringTemplates.find((t) => t.id === templateId);
@@ -383,8 +401,10 @@
       setForm((f) => __spreadProps(__spreadValues({}, f), {
         tipo: m.tipo,
         comune: m.comune || f.comune,
+        comuneCustom: m.comuneCustom || "",
         clienteId: m.clienteId || "",
         oraInizio: m.oraInizio || f.oraInizio,
+        oraRitorno: m.oraRitorno || "",
         ore: sug.ore,
         km: sug.km,
         prezzo: sug.prezzo
@@ -486,7 +506,10 @@
     ), testResult && /* @__PURE__ */ React.createElement("p", { className: "text-xs mt-2", style: { fontFamily: "monospace" } }, testResult)), savingRides && !saveError && /* @__PURE__ */ React.createElement("div", { className: "mx-4 mt-3 p-2 rounded-lg text-xs text-center", style: { background: "#EFE6D4", color: NAVY } }, "Salvataggio in corso\u2026"), savedFlash && !saveError && !savingRides && /* @__PURE__ */ React.createElement("div", { className: "mx-4 mt-3 p-2 rounded-lg text-xs text-center font-semibold", style: { background: "#DCEEDD", color: "#1F5C2E" } }, "Salvato \u2713"), /* @__PURE__ */ React.createElement("div", { className: "p-4 max-w-2xl mx-auto" }, tab === "calendario" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("button", { onClick: meseIndietro, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 22, color: NAVY })), /* @__PURE__ */ React.createElement("h2", { style: { color: NAVY }, className: "text-lg font-bold" }, MESI[currentMonth.getMonth()], " ", currentMonth.getFullYear()), /* @__PURE__ */ React.createElement("button", { onClick: meseAvanti, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22, color: NAVY }))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-7 gap-1 mb-1" }, GIORNI.map((g) => /* @__PURE__ */ React.createElement("div", { key: g, style: { color: GRAY }, className: "text-center text-xs font-semibold py-1" }, g))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-7 gap-1" }, grid.map((iso, i) => {
       if (!iso) return /* @__PURE__ */ React.createElement("div", { key: i });
       const dayNum = Number(iso.slice(-2));
-      const hasRides = !!ridesByDate[iso];
+      const rideGiorno = ridesByDate[iso];
+      const hasRides = !!rideGiorno;
+      const hasEffettuata = hasRides && rideGiorno.some((r) => (r.stato || "effettuata") === "effettuata");
+      const hasSoloPrenotate = hasRides && !hasEffettuata;
       const isSelected = iso === selectedDate;
       const isToday = iso === todayISO();
       return /* @__PURE__ */ React.createElement(
@@ -496,15 +519,15 @@
           onClick: () => setSelectedDate(iso),
           className: "aspect-square rounded-lg flex flex-col items-center justify-center relative",
           style: {
-            background: hasRides ? NAVY : PAPER,
-            border: isSelected ? `2px solid ${OCHRE}` : isToday ? `2px solid ${NAVY}` : "1px solid #E4DCC9"
+            background: hasEffettuata ? NAVY : hasSoloPrenotate ? "#FBF0DE" : PAPER,
+            border: isSelected ? `2px solid ${OCHRE}` : hasSoloPrenotate ? `2px dashed ${OCHRE}` : isToday ? `2px solid ${NAVY}` : "1px solid #E4DCC9"
           }
         },
         /* @__PURE__ */ React.createElement(
           "span",
           {
             className: "text-sm font-semibold",
-            style: { color: hasRides ? "#fff" : INK }
+            style: { color: hasEffettuata ? "#fff" : NAVY }
           },
           dayNum
         ),
@@ -512,12 +535,12 @@
           "span",
           {
             className: "text-[10px] mt-0.5 px-1 rounded-full font-bold",
-            style: { background: OCHRE, color: NAVY }
+            style: { background: hasEffettuata ? OCHRE : NAVY, color: hasEffettuata ? NAVY : "#fff" }
           },
-          ridesByDate[iso].length
+          rideGiorno.length
         )
       );
-    })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-4 mt-3 text-xs", style: { color: GRAY } }, /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "inline-block w-3 h-3 rounded", style: { background: PAPER, border: "1px solid #E4DCC9" } }), " Libero"), /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "inline-block w-3 h-3 rounded", style: { background: NAVY } }), " Occupato")), /* @__PURE__ */ React.createElement("div", { className: "mt-6 p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold" }, (/* @__PURE__ */ new Date(selectedDate + "T00:00:00")).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })), /* @__PURE__ */ React.createElement(
+    })), /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-3 mt-3 text-xs flex-wrap", style: { color: GRAY } }, /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "inline-block w-3 h-3 rounded", style: { background: PAPER, border: "1px solid #E4DCC9" } }), " Libero"), /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "inline-block w-3 h-3 rounded", style: { background: "#FBF0DE", border: `1px dashed ${OCHRE}` } }), " Prenotato"), /* @__PURE__ */ React.createElement("span", { className: "flex items-center gap-1" }, /* @__PURE__ */ React.createElement("span", { className: "inline-block w-3 h-3 rounded", style: { background: NAVY } }), " Effettuato")), /* @__PURE__ */ React.createElement("div", { className: "mt-6 p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-3" }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold" }, (/* @__PURE__ */ new Date(selectedDate + "T00:00:00")).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })), /* @__PURE__ */ React.createElement(
       "button",
       {
         onClick: () => openNewForm(selectedDate),
@@ -531,15 +554,29 @@
       const tipoLabel = ((_a2 = SERVICE_TYPES.find((t) => t.id === r.tipo)) == null ? void 0 : _a2.label) || r.tipo;
       const cliente = clients.find((c) => c.id === r.clienteId);
       const nomeMostrato = cliente ? `${cliente.nome} ${cliente.cognome}` : r.cliente;
+      const prenotata = r.stato === "prenotata";
+      const localita = r.comune === "ALTRO" ? r.comuneCustom : r.comune;
+      const orari = r.oraRitorno ? `${r.oraInizio} \u2192 ${r.oraRitorno}` : r.oraInizio;
       return /* @__PURE__ */ React.createElement(
         "div",
         {
           key: r.id,
           className: "p-3 rounded-lg flex items-center gap-3",
-          style: { background: CREAM }
+          style: { background: prenotata ? "#FBF0DE" : CREAM, border: prenotata ? `1px dashed ${OCHRE}` : "none" }
         },
-        /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "font-semibold text-sm" }, r.oraInizio, " \u2014 ", tipoLabel, r.tipo === "fuori" && r.comune ? ` (${r.comune})` : ""), nomeMostrato && /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, nomeMostrato)),
+        /* @__PURE__ */ React.createElement("div", { className: "flex-1 min-w-0" }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "font-semibold text-sm" }, orari, " \u2014 ", tipoLabel, r.tipo === "fuori" && localita ? ` (${localita})` : ""), nomeMostrato && /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, nomeMostrato), prenotata && /* @__PURE__ */ React.createElement("p", { style: { color: OCHRE }, className: "text-xs font-bold mt-0.5" }, "Prenotata")),
         /* @__PURE__ */ React.createElement("div", { className: "text-right" }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "font-bold text-sm" }, Number(r.prezzo).toFixed(0), "\u20AC"), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, r.km, " km")),
+        prenotata && /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            onClick: () => segnaEffettuata(r),
+            "aria-label": "Segna come effettuata",
+            className: "p-2 rounded-lg flex-shrink-0",
+            style: { background: NAVY },
+            title: "Segna come effettuata"
+          },
+          /* @__PURE__ */ React.createElement(Star, { size: 18, color: "#fff" })
+        ),
         /* @__PURE__ */ React.createElement(
           "button",
           {
@@ -560,12 +597,13 @@
         blocked: clientsBlocked,
         saving: savingClients
       }
-    ), tab === "riepilogo" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("button", { onClick: meseIndietro, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 22, color: NAVY })), /* @__PURE__ */ React.createElement("h2", { style: { color: NAVY }, className: "text-lg font-bold" }, MESI[currentMonth.getMonth()], " ", currentMonth.getFullYear()), /* @__PURE__ */ React.createElement("button", { onClick: meseAvanti, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22, color: NAVY }))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: NAVY } }, /* @__PURE__ */ React.createElement("p", { style: { color: "#B9C2D4" }, className: "text-xs" }, "Incassi"), /* @__PURE__ */ React.createElement("p", { style: { color: "#fff" }, className: "text-2xl font-bold" }, totals.incassi.toFixed(0), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, "Costi auto (km)"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.costi.toFixed(2), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: OCHRE } }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-xs font-semibold" }, "Margine"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.margine.toFixed(2), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, "Km percorsi"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.km))), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-sm mb-4" }, totals.corse, " ", totals.corse === 1 ? "corsa registrata" : "corse registrate", " questo mese."), breakdownPerTipo.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold mb-3" }, "Per tipo di servizio"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, breakdownPerTipo.map(([label, d]) => /* @__PURE__ */ React.createElement("div", { key: label, className: "flex items-center justify-between text-sm" }, /* @__PURE__ */ React.createElement("span", { style: { color: INK } }, label, " ", /* @__PURE__ */ React.createElement("span", { style: { color: GRAY } }, "\xD7 ", d.corse)), /* @__PURE__ */ React.createElement("span", { style: { color: NAVY }, className: "font-semibold" }, d.incassi.toFixed(0), "\u20AC"))))), /* @__PURE__ */ React.createElement("p", { className: "text-xs mt-4", style: { color: GRAY } }, "I costi auto sono calcolati come km percorsi \xD7 costo al km impostato \u2014 non includono altre spese (es. assicurazione, manutenzione straordinaria) se non le hai incluse tu nel costo al km.")), tab === "impostazioni" && /* @__PURE__ */ React.createElement(
+    ), tab === "riepilogo" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "flex items-center justify-between mb-4" }, /* @__PURE__ */ React.createElement("button", { onClick: meseIndietro, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 22, color: NAVY })), /* @__PURE__ */ React.createElement("h2", { style: { color: NAVY }, className: "text-lg font-bold" }, MESI[currentMonth.getMonth()], " ", currentMonth.getFullYear()), /* @__PURE__ */ React.createElement("button", { onClick: meseAvanti, className: "p-2 rounded-full", style: { background: PAPER } }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22, color: NAVY }))), /* @__PURE__ */ React.createElement("div", { className: "grid grid-cols-2 gap-3 mb-4" }, /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: NAVY } }, /* @__PURE__ */ React.createElement("p", { style: { color: "#B9C2D4" }, className: "text-xs" }, "Incassi"), /* @__PURE__ */ React.createElement("p", { style: { color: "#fff" }, className: "text-2xl font-bold" }, totals.incassi.toFixed(0), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, "Costi auto (km)"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.costi.toFixed(2), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: OCHRE } }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-xs font-semibold" }, "Margine"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.margine.toFixed(2), "\u20AC")), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, "Km percorsi"), /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-2xl font-bold" }, totals.km))), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-sm mb-1" }, totals.corse, " ", totals.corse === 1 ? "corsa effettuata" : "corse effettuate", " questo mese."), prenotateThisMonth.length > 0 && /* @__PURE__ */ React.createElement("p", { style: { color: OCHRE }, className: "text-sm mb-4 font-semibold" }, "+ ", prenotateThisMonth.length, " ", prenotateThisMonth.length === 1 ? "corsa prenotata" : "corse prenotate", ", non ancora contate qui sopra."), prenotateThisMonth.length === 0 && /* @__PURE__ */ React.createElement("div", { className: "mb-4" }), breakdownPerTipo.length > 0 && /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold mb-3" }, "Per tipo di servizio"), /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, breakdownPerTipo.map(([label, d]) => /* @__PURE__ */ React.createElement("div", { key: label, className: "flex items-center justify-between text-sm" }, /* @__PURE__ */ React.createElement("span", { style: { color: INK } }, label, " ", /* @__PURE__ */ React.createElement("span", { style: { color: GRAY } }, "\xD7 ", d.corse)), /* @__PURE__ */ React.createElement("span", { style: { color: NAVY }, className: "font-semibold" }, d.incassi.toFixed(0), "\u20AC"))))), /* @__PURE__ */ React.createElement("p", { className: "text-xs mt-4", style: { color: GRAY } }, "I costi auto sono calcolati come km percorsi \xD7 costo al km impostato \u2014 non includono altre spese (es. assicurazione, manutenzione straordinaria) se non le hai incluse tu nel costo al km.")), tab === "impostazioni" && /* @__PURE__ */ React.createElement(
       SettingsPanel,
       {
         settings,
         onSave: persistSettings,
         rides,
+        onSaveRides: persistRides,
         clients,
         recurringTemplates,
         onSaveRecurring: persistRecurring
@@ -585,11 +623,29 @@
       {
         type: "date",
         value: form.data,
-        onChange: (e) => setForm((f) => __spreadProps(__spreadValues({}, f), { data: e.target.value })),
+        onChange: (e) => setForm((f) => __spreadProps(__spreadValues({}, f), { data: e.target.value, stato: e.target.value > todayISO() ? "prenotata" : f.stato })),
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       }
-    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora di partenza"), /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Stato"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-3" }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setForm((f) => __spreadProps(__spreadValues({}, f), { stato: "prenotata" })),
+        className: "flex-1 py-2.5 rounded-lg text-sm font-semibold",
+        style: { background: form.stato === "prenotata" ? OCHRE : CREAM, color: NAVY, border: `1px solid ${form.stato === "prenotata" ? OCHRE : "#E4DCC9"}` }
+      },
+      "Prenotata (futura)"
+    ), /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setForm((f) => __spreadProps(__spreadValues({}, f), { stato: "effettuata" })),
+        className: "flex-1 py-2.5 rounded-lg text-sm font-semibold",
+        style: { background: form.stato === "effettuata" ? NAVY : CREAM, color: form.stato === "effettuata" ? "#fff" : NAVY, border: `1px solid ${form.stato === "effettuata" ? NAVY : "#E4DCC9"}` }
+      },
+      "Effettuata"
+    )), form.stato === "prenotata" && /* @__PURE__ */ React.createElement("p", { className: "text-xs mb-3", style: { color: GRAY } }, "Una corsa prenotata occupa il giorno nel calendario ma non entra negli incassi finch\xE9 non la segni come effettuata."), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora andata"), /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "time",
@@ -598,7 +654,17 @@
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       }
-    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Tipo di servizio"), /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora ritorno (facoltativa)"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "time",
+        value: form.oraRitorno,
+        onChange: (e) => setForm((f) => __spreadProps(__spreadValues({}, f), { oraRitorno: e.target.value })),
+        placeholder: "Es. se accompagni e poi torni a riprendere pi\xF9 tardi",
+        className: "w-full p-3 rounded-lg mb-3 text-base",
+        style: { border: "1px solid #E4DCC9", background: CREAM }
+      }
+    ), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs mb-3" }, "Se la corsa prevede due passaggi (vai, e torni a riprendere pi\xF9 tardi), indica qui l'orario del secondo passaggio \u2014 resta un'unica corsa con un compenso solo."), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Tipo di servizio"), /* @__PURE__ */ React.createElement(
       "select",
       {
         value: form.tipo,
@@ -615,8 +681,19 @@
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       },
-      settings.comuni.map((c) => /* @__PURE__ */ React.createElement("option", { key: c.nome, value: c.nome }, c.nome))
-    )), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Cliente (facoltativo)"), /* @__PURE__ */ React.createElement(
+      settings.comuni.map((c) => /* @__PURE__ */ React.createElement("option", { key: c.nome, value: c.nome }, c.nome)),
+      /* @__PURE__ */ React.createElement("option", { value: "ALTRO" }, "Altra localit\xE0\u2026")
+    ), form.comune === "ALTRO" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Nome della localit\xE0"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "text",
+        value: form.comuneCustom,
+        onChange: (e) => setForm((f) => __spreadProps(__spreadValues({}, f), { comuneCustom: e.target.value })),
+        placeholder: "Es. Andria",
+        className: "w-full p-3 rounded-lg mb-2 text-base",
+        style: { border: "1px solid #E4DCC9", background: CREAM }
+      }
+    ), /* @__PURE__ */ React.createElement("p", { style: { color: OCHRE }, className: "text-xs mb-3 font-semibold" }, 'Non \xE8 tra i comuni registrati: inserisci tu i km andata+ritorno nel campo "Km" qui sotto, poi tocca "Ricalcola" per il prezzo.'))), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Cliente (facoltativo)"), /* @__PURE__ */ React.createElement(
       "select",
       {
         value: form.clienteId,
@@ -709,6 +786,7 @@
       const map = {};
       rides.forEach((r) => {
         if (!r.clienteId) return;
+        if ((r.stato || "effettuata") !== "effettuata") return;
         if (!map[r.clienteId]) map[r.clienteId] = { incassi: 0, corse: 0 };
         map[r.clienteId].incassi += Number(r.prezzo) || 0;
         map[r.clienteId].corse += 1;
@@ -833,7 +911,7 @@
       saving ? "Salvataggio\u2026" : "Salva cliente"
     ))));
   }
-  function SettingsPanel({ settings, onSave, rides, clients, recurringTemplates, onSaveRecurring }) {
+  function SettingsPanel({ settings, onSave, rides, onSaveRides, clients, recurringTemplates, onSaveRecurring }) {
     var _a;
     const [local, setLocal] = useState(settings);
     const [status, setStatus] = useState("idle");
@@ -859,13 +937,14 @@
       }
     }
     function esportaCSV() {
-      const intestazione = "Data,Ora,Tipo servizio,Comune,Cliente,Nota,Ore,Km,Prezzo (\u20AC)\n";
+      const intestazione = "Data,Ora andata,Ora ritorno,Stato,Tipo servizio,Localita,Cliente,Nota,Ore,Km,Prezzo (\u20AC)\n";
       const righe = (rides || []).slice().sort((a2, b) => a2.data.localeCompare(b.data)).map((r) => {
         var _a2;
         const tipoLabel = ((_a2 = SERVICE_TYPES.find((t) => t.id === r.tipo)) == null ? void 0 : _a2.label) || r.tipo;
         const cliente = (clients || []).find((c) => c.id === r.clienteId);
         const nomeCliente = cliente ? `${cliente.nome} ${cliente.cognome}` : "";
-        const campi = [r.data, r.oraInizio, tipoLabel, r.comune || "", nomeCliente, r.cliente || "", r.ore, r.km, r.prezzo];
+        const localita = r.comune === "ALTRO" ? r.comuneCustom : r.comune || "";
+        const campi = [r.data, r.oraInizio, r.oraRitorno || "", r.stato || "effettuata", tipoLabel, localita, nomeCliente, r.cliente || "", r.ore, r.km, r.prezzo];
         return campi.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
       }).join("\n");
       const csv = intestazione + righe;
@@ -895,17 +974,44 @@
     }
     const [showModello, setShowModello] = useState(false);
     const [modelloEditId, setModelloEditId] = useState(null);
-    const [modelloForm, setModelloForm] = useState({ label: "", tipo: "breve", comune: ((_a = settings.comuni[0]) == null ? void 0 : _a.nome) || "", clienteId: "", oraInizio: "09:00" });
+    const modelloVuoto = { label: "", tipo: "breve", comune: ((_a = settings.comuni[0]) == null ? void 0 : _a.nome) || "", comuneCustom: "", clienteId: "", oraInizio: "09:00", oraRitorno: "", giorni: [] };
+    const [modelloForm, setModelloForm] = useState(modelloVuoto);
+    const [showGenera, setShowGenera] = useState(null);
+    const [generaRange, setGeneraRange] = useState({ da: todayISO(), a: "" });
+    const [generaMessaggio, setGeneraMessaggio] = useState("");
+    const GIORNI_SETT = [
+      { v: 1, l: "Lun" },
+      { v: 2, l: "Mar" },
+      { v: 3, l: "Mer" },
+      { v: 4, l: "Gio" },
+      { v: 5, l: "Ven" },
+      { v: 6, l: "Sab" },
+      { v: 0, l: "Dom" }
+    ];
     function apriNuovoModello() {
-      var _a2;
-      setModelloForm({ label: "", tipo: "breve", comune: ((_a2 = settings.comuni[0]) == null ? void 0 : _a2.nome) || "", clienteId: "", oraInizio: "09:00" });
+      setModelloForm(modelloVuoto);
       setModelloEditId(null);
       setShowModello(true);
     }
     function apriModificaModello(m) {
-      setModelloForm({ label: m.label, tipo: m.tipo, comune: m.comune || "", clienteId: m.clienteId || "", oraInizio: m.oraInizio || "09:00" });
+      setModelloForm({
+        label: m.label,
+        tipo: m.tipo,
+        comune: m.comune || "",
+        comuneCustom: m.comuneCustom || "",
+        clienteId: m.clienteId || "",
+        oraInizio: m.oraInizio || "09:00",
+        oraRitorno: m.oraRitorno || "",
+        giorni: m.giorni || []
+      });
       setModelloEditId(m.id);
       setShowModello(true);
+    }
+    function toggleGiorno(v) {
+      setModelloForm((f) => {
+        const giorni = f.giorni.includes(v) ? f.giorni.filter((g) => g !== v) : [...f.giorni, v];
+        return __spreadProps(__spreadValues({}, f), { giorni });
+      });
     }
     async function salvaModello() {
       if (!modelloForm.label.trim()) return;
@@ -922,6 +1028,61 @@
     async function eliminaModello(id) {
       const next = recurringTemplates.filter((m) => m.id !== id);
       await onSaveRecurring(next);
+    }
+    async function generaPrenotazioni(modello) {
+      if (!generaRange.da || !generaRange.a) {
+        setGeneraMessaggio("Indica sia la data di inizio sia quella di fine.");
+        return;
+      }
+      if (!modello.giorni || modello.giorni.length === 0) {
+        setGeneraMessaggio("Questo modello non ha giorni della settimana selezionati: modificalo prima di generare.");
+        return;
+      }
+      const inizio = /* @__PURE__ */ new Date(generaRange.da + "T00:00:00");
+      const fine = /* @__PURE__ */ new Date(generaRange.a + "T00:00:00");
+      if (fine < inizio) {
+        setGeneraMessaggio("La data di fine \xE8 prima di quella di inizio.");
+        return;
+      }
+      const esistentiPerModello = new Set(
+        rides.filter((r) => r.recurringId === modello.id).map((r) => r.data)
+      );
+      const usaAltro = modello.comune === "ALTRO";
+      const kmModello = usaAltro ? Number(modello.kmManuale) || 0 : suggerisci(modello.tipo, modello.comune, settings).km;
+      const oreModello = suggerisci(modello.tipo, modello.comune, settings).ore;
+      const prezzoModello = Math.round(oreModello * settings.tariffaOraria + kmModello * settings.costoKm);
+      const nuove = [];
+      let cursore = new Date(inizio);
+      let iterazioni = 0;
+      while (cursore <= fine && iterazioni < 366) {
+        const iso = cursore.toISOString().slice(0, 10);
+        if (modello.giorni.includes(cursore.getDay()) && !esistentiPerModello.has(iso)) {
+          nuove.push({
+            id: `r${Date.now()}_${iterazioni}`,
+            data: iso,
+            oraInizio: modello.oraInizio,
+            oraRitorno: modello.oraRitorno || "",
+            tipo: modello.tipo,
+            comune: modello.comune || "",
+            comuneCustom: modello.comuneCustom || "",
+            clienteId: modello.clienteId || "",
+            cliente: "",
+            ore: oreModello,
+            km: kmModello,
+            prezzo: prezzoModello,
+            stato: "prenotata",
+            recurringId: modello.id
+          });
+        }
+        cursore.setDate(cursore.getDate() + 1);
+        iterazioni++;
+      }
+      if (nuove.length === 0) {
+        setGeneraMessaggio("Nessun nuovo giorno da aggiungere in questo periodo (forse gi\xE0 generati in precedenza).");
+        return;
+      }
+      await onSaveRides([...rides, ...nuove]);
+      setGeneraMessaggio(`Aggiunte ${nuove.length} prenotazioni al calendario.`);
     }
     return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl mb-4", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold mb-3" }, "Parametri di calcolo"), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Tariffa oraria (\u20AC/ora)"), /* @__PURE__ */ React.createElement(
       "input",
@@ -988,7 +1149,25 @@
       var _a2;
       const tipoLabel = ((_a2 = SERVICE_TYPES.find((t) => t.id === m.tipo)) == null ? void 0 : _a2.label) || m.tipo;
       const cliente = (clients || []).find((c) => c.id === m.clienteId);
-      return /* @__PURE__ */ React.createElement("div", { key: m.id, className: "p-3 rounded-lg flex items-center justify-between", style: { background: CREAM } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "font-semibold text-sm" }, m.label), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, m.oraInizio, " \u2014 ", tipoLabel, m.tipo === "fuori" && m.comune ? ` (${m.comune})` : "", cliente ? ` \u2014 ${cliente.nome} ${cliente.cognome}` : "")), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1" }, /* @__PURE__ */ React.createElement("button", { onClick: () => apriModificaModello(m), className: "p-2 rounded-lg", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement(Pencil, { size: 16, color: NAVY })), /* @__PURE__ */ React.createElement("button", { onClick: () => eliminaModello(m.id), className: "p-2 rounded-lg", style: { background: "#FBE7E7" } }, /* @__PURE__ */ React.createElement(Trash2, { size: 16, color: "#7A2E2E" }))));
+      const giorniLabel = (m.giorni || []).length ? GIORNI_SETT.filter((g) => m.giorni.includes(g.v)).map((g) => g.l).join(", ") : "";
+      const localitaModello = m.comune === "ALTRO" ? m.comuneCustom : m.comune;
+      const orariModello = m.oraRitorno ? `${m.oraInizio} \u2192 ${m.oraRitorno}` : m.oraInizio;
+      return /* @__PURE__ */ React.createElement("div", { key: m.id, className: "rounded-lg overflow-hidden", style: { background: CREAM } }, /* @__PURE__ */ React.createElement("div", { className: "p-3 flex items-center justify-between" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "font-semibold text-sm" }, m.label), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs" }, orariModello, " \u2014 ", tipoLabel, m.tipo === "fuori" && localitaModello ? ` (${localitaModello})` : "", cliente ? ` \u2014 ${cliente.nome} ${cliente.cognome}` : ""), giorniLabel && /* @__PURE__ */ React.createElement("p", { style: { color: OCHRE }, className: "text-xs font-semibold mt-0.5" }, giorniLabel)), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1" }, /* @__PURE__ */ React.createElement("button", { onClick: () => apriModificaModello(m), className: "p-2 rounded-lg", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement(Pencil, { size: 16, color: NAVY })), /* @__PURE__ */ React.createElement("button", { onClick: () => eliminaModello(m.id), className: "p-2 rounded-lg", style: { background: "#FBE7E7" } }, /* @__PURE__ */ React.createElement(Trash2, { size: 16, color: "#7A2E2E" })))), /* @__PURE__ */ React.createElement("div", { className: "px-3 pb-3" }, showGenera === m.id ? /* @__PURE__ */ React.createElement("div", { className: "p-3 rounded-lg", style: { background: PAPER, border: `1px solid ${OCHRE}` } }, /* @__PURE__ */ React.createElement("p", { style: { color: NAVY }, className: "text-xs font-semibold mb-2" }, "Genera prenotazioni dal \u2014 al:"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2 mb-2" }, /* @__PURE__ */ React.createElement("input", { type: "date", value: generaRange.da, onChange: (e) => setGeneraRange((r) => __spreadProps(__spreadValues({}, r), { da: e.target.value })), className: "flex-1 p-2 rounded-lg text-sm", style: { border: "1px solid #E4DCC9" } }), /* @__PURE__ */ React.createElement("input", { type: "date", value: generaRange.a, onChange: (e) => setGeneraRange((r) => __spreadProps(__spreadValues({}, r), { a: e.target.value })), className: "flex-1 p-2 rounded-lg text-sm", style: { border: "1px solid #E4DCC9" } })), generaMessaggio && /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs mb-2" }, generaMessaggio), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement("button", { onClick: () => generaPrenotazioni(m), className: "flex-1 py-2 rounded-lg text-sm font-bold", style: { background: OCHRE, color: NAVY } }, "Genera"), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+        setShowGenera(null);
+        setGeneraMessaggio("");
+      }, className: "py-2 px-3 rounded-lg text-sm", style: { background: CREAM, color: GRAY } }, "Chiudi"))) : /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          onClick: () => {
+            setShowGenera(m.id);
+            setGeneraMessaggio("");
+            setGeneraRange({ da: todayISO(), a: "" });
+          },
+          className: "w-full py-2 rounded-lg text-sm font-semibold",
+          style: { background: PAPER, color: NAVY, border: `1px solid ${OCHRE}` }
+        },
+        "Genera prenotazioni"
+      )));
     }))), /* @__PURE__ */ React.createElement("div", { className: "p-4 rounded-xl mb-4", style: { background: PAPER, border: "1px solid #E4DCC9" } }, /* @__PURE__ */ React.createElement("h3", { style: { color: NAVY }, className: "font-bold mb-2" }, "Backup"), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-sm mb-3" }, "Scarica i dati in un file sul telefono, indipendente da questa app. Fallo ogni tanto, soprattutto prima di fare tante modifiche."), /* @__PURE__ */ React.createElement("div", { className: "flex gap-2" }, /* @__PURE__ */ React.createElement(
       "button",
       {
@@ -1015,12 +1194,21 @@
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       }
-    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora abituale"), /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora andata"), /* @__PURE__ */ React.createElement(
       "input",
       {
         type: "time",
         value: modelloForm.oraInizio,
         onChange: (e) => setModelloForm((f) => __spreadProps(__spreadValues({}, f), { oraInizio: e.target.value })),
+        className: "w-full p-3 rounded-lg mb-3 text-base",
+        style: { border: "1px solid #E4DCC9", background: CREAM }
+      }
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Ora ritorno (facoltativa)"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "time",
+        value: modelloForm.oraRitorno,
+        onChange: (e) => setModelloForm((f) => __spreadProps(__spreadValues({}, f), { oraRitorno: e.target.value })),
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       }
@@ -1041,8 +1229,29 @@
         className: "w-full p-3 rounded-lg mb-3 text-base",
         style: { border: "1px solid #E4DCC9", background: CREAM }
       },
-      settings.comuni.map((c) => /* @__PURE__ */ React.createElement("option", { key: c.nome, value: c.nome }, c.nome))
-    )), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Cliente (facoltativo)"), /* @__PURE__ */ React.createElement(
+      settings.comuni.map((c) => /* @__PURE__ */ React.createElement("option", { key: c.nome, value: c.nome }, c.nome)),
+      /* @__PURE__ */ React.createElement("option", { value: "ALTRO" }, "Altra localit\xE0\u2026")
+    ), modelloForm.comune === "ALTRO" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Nome della localit\xE0"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "text",
+        value: modelloForm.comuneCustom,
+        onChange: (e) => setModelloForm((f) => __spreadProps(__spreadValues({}, f), { comuneCustom: e.target.value })),
+        placeholder: "Es. Andria",
+        className: "w-full p-3 rounded-lg mb-3 text-base",
+        style: { border: "1px solid #E4DCC9", background: CREAM }
+      }
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Km andata+ritorno"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "number",
+        step: "1",
+        value: modelloForm.kmManuale || "",
+        onChange: (e) => setModelloForm((f) => __spreadProps(__spreadValues({}, f), { kmManuale: e.target.value })),
+        className: "w-full p-3 rounded-lg mb-3 text-base",
+        style: { border: "1px solid #E4DCC9", background: CREAM }
+      }
+    ))), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Cliente (facoltativo)"), /* @__PURE__ */ React.createElement(
       "select",
       {
         value: modelloForm.clienteId,
@@ -1052,7 +1261,21 @@
       },
       /* @__PURE__ */ React.createElement("option", { value: "" }, "\u2014 nessuno \u2014"),
       (clients || []).map((c) => /* @__PURE__ */ React.createElement("option", { key: c.id, value: c.id }, c.nome, " ", c.cognome))
-    ), /* @__PURE__ */ React.createElement(
+    ), /* @__PURE__ */ React.createElement("label", { className: "block text-sm font-semibold mb-1", style: { color: NAVY } }, "Giorni della settimana in cui si ripete"), /* @__PURE__ */ React.createElement("div", { className: "flex gap-1.5 mb-4 flex-wrap" }, GIORNI_SETT.map((g) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: g.v,
+        type: "button",
+        onClick: () => toggleGiorno(g.v),
+        className: "px-3 py-2 rounded-lg text-sm font-semibold",
+        style: {
+          background: modelloForm.giorni.includes(g.v) ? OCHRE : CREAM,
+          color: NAVY,
+          border: `1px solid ${modelloForm.giorni.includes(g.v) ? OCHRE : "#E4DCC9"}`
+        }
+      },
+      g.l
+    ))), /* @__PURE__ */ React.createElement("p", { style: { color: GRAY }, className: "text-xs mb-4" }, 'Servono solo se vuoi generare in blocco le prenotazioni future per questo modello (pulsante "Genera prenotazioni" nella lista). Per il quick-fill in "Nuova corsa" non sono necessari.'), /* @__PURE__ */ React.createElement(
       "button",
       {
         onClick: salvaModello,
